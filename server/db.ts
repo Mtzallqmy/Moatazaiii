@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertPublicEntity, InsertUser, publicEntities, publicIndexRefreshSettings, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,43 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+export async function upsertPublicEntities(entries: InsertPublicEntity[]) {
+  const db = await getDb();
+  if (!db || entries.length === 0) return;
+  for (const entry of entries) {
+    await db.insert(publicEntities).values(entry).onDuplicateKeyUpdate({
+      set: {
+        kind: entry.kind,
+        title: entry.title,
+        username: entry.username ?? null,
+        description: entry.description ?? null,
+        photoUrl: entry.photoUrl ?? null,
+        language: entry.language ?? null,
+        statLabel: entry.statLabel ?? null,
+        statValue: entry.statValue ?? null,
+        publicUrl: entry.publicUrl ?? null,
+        canMessage: entry.canMessage ?? false,
+        sourceUpdatedAt: entry.sourceUpdatedAt ?? null,
+        refreshedAt: new Date(),
+      },
+    });
+  }
+}
+
+export async function listPublicEntitiesForRefresh(limit: number, offset: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(publicEntities).orderBy(asc(publicEntities.id)).limit(limit).offset(offset);
+}
+
+export async function getRefreshSettingByTaskUid(taskUid: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  return (await db.select().from(publicIndexRefreshSettings).where(eq(publicIndexRefreshSettings.scheduleCronTaskUid, taskUid)).limit(1))[0];
+}
+
+export async function updateRefreshCursor(id: number, lastCursor: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(publicIndexRefreshSettings).set({ lastCursor, lastRanAt: new Date() }).where(eq(publicIndexRefreshSettings.id, id));
+}

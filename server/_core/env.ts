@@ -7,4 +7,6 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  telegramPublicSearchBaseUrl: process.env.TELEGRAM_PUBLIC_SEARCH_BASE_URL?.replace(/\/$/, "") ?? "",
+  telegramPublicSearchApiKey: process.env.TELEGRAM_PUBLIC_SEARCH_API_KEY ?? "",
 };
