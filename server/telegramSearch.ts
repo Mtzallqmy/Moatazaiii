@@ -17,6 +17,7 @@ export type PublicEntityResult = {
   evidenceUrl: string | null;
   canMessage: boolean;
   sourceUpdatedAt: string | null;
+  source: { id: "public-index" | "tdlib" | "directory"; label: string; coverage: string };
   /** نص داخلي للاستدلال على المطابقة؛ يحذف قبل إرسال النتيجة للواجهة. */
   _matchText?: string | null;
 };
@@ -28,10 +29,13 @@ export type SearchResponse = {
   suggestions: string[];
   relatedQueries: string[];
   sourceLabel: string;
+  sources: Array<{ id: "public-index" | "tdlib" | "directory"; label: string; coverage: string; state: "used" | "not_configured" | "unavailable" }>;
 };
 
 type ProviderRow = Record<string, unknown>;
-type ProviderChat = Record<string, unknown>;
+type SourceId = "public-index" | "tdlib" | "directory";
+type SourceDescriptor = { id: SourceId; label: string; coverage: string };
+type SourceStatus = SourceDescriptor & { state: "used" | "not_configured" | "unavailable" };
 const queryCache = new Map<string, { expiresAt: number; response: SearchResponse }>();
 const USERNAME_PATTERN = /^[a-zA-Z0-9_]{5,32}$/;
 const PHONE_PATTERN = /^\+?\d(?:[\s()\-]*\d){6,}$/;
@@ -147,7 +151,7 @@ export function rankPublicResults(results: PublicEntityResult[], query: string) 
 }
 
 /** يدعم حقول الكيانات المباشرة، وكذلك شكل المصدر الفعلي: { text, date, chat: {title, username}, url }. */
-export function mapPublicProviderRow(row: ProviderRow, query: string): PublicEntityResult | null {
+export function mapPublicProviderRow(row: ProviderRow, query: string, source: SourceDescriptor = { id: "public-index", label: "فهرس الرسائل العامة", coverage: "قنوات عامة مفهرسة" }): PublicEntityResult | null {
   const chat = asProviderRow(row.chat) ?? {};
   const usernameRaw = readString(row, ["username", "channel_username", "channelUsername", "public_username"])
     ?? readString(chat, ["username", "public_username"]);
@@ -172,7 +176,7 @@ export function mapPublicProviderRow(row: ProviderRow, query: string): PublicEnt
     publicStats: statValue === null ? null : { label: kind === "channel" ? "مشترك" : "متابع", value: statValue },
   };
   const idValue = row.id;
-  const id = typeof idValue === "string" || typeof idValue === "number" ? String(idValue) : `${kind}:${candidate.username ?? normalizeArabic(candidate.title)}`;
+  const id = `${source.id}:${typeof idValue === "string" || typeof idValue === "number" ? String(idValue) : `${kind}:${candidate.username ?? normalizeArabic(candidate.title)}`}`;
   return {
     id,
     kind,
@@ -184,6 +188,7 @@ export function mapPublicProviderRow(row: ProviderRow, query: string): PublicEnt
     evidenceUrl,
     canMessage: kind === "user" && Boolean(candidate.username),
     sourceUpdatedAt: readString(row, ["updated_at", "updatedAt", "source_updated_at", "date"]),
+    source,
     _matchText: rawMessageText,
   };
 }
@@ -200,12 +205,16 @@ function buildRelatedQueries(results: PublicEntityResult[], currentQuery: string
   }).slice(0, 8);
 }
 
-async function callProvider(query: string, limit: number) {
-  const url = new URL(`${ENV.telegramPublicSearchBaseUrl}/search`);
+function getSourceHeaders(apiKey: string) {
+  return { "X-API-Key": apiKey, Authorization: `Bearer ${apiKey}` };
+}
+
+async function callProvider(baseUrl: string, apiKey: string, path: string, query: string, limit: number) {
+  const url = new URL(`${baseUrl}${path}`);
   url.searchParams.set("q", query);
   url.searchParams.set("limit", String(limit));
   const response = await fetch(url, {
-    headers: { "X-API-Key": ENV.telegramPublicSearchApiKey, Authorization: `Bearer ${ENV.telegramPublicSearchApiKey}` },
+    headers: getSourceHeaders(apiKey),
     signal: AbortSignal.timeout(12_000),
   });
   if (!response.ok) throw new Error(`SOURCE_HTTP_${response.status}`);
@@ -213,23 +222,47 @@ async function callProvider(query: string, limit: number) {
   return Array.isArray(payload.results) ? payload.results.map(asProviderRow).filter((row): row is ProviderRow => Boolean(row)) : [];
 }
 
+async function querySource(source: SourceDescriptor, baseUrl: string, apiKey: string, path: string, variants: string[], originalQuery: string) {
+  const rows: ProviderRow[] = [];
+  for (const variant of variants) rows.push(...await callProvider(baseUrl, apiKey, path, variant, 20));
+  return rows.map(row => mapPublicProviderRow(row, originalQuery, source)).filter((item): item is PublicEntityResult => Boolean(item));
+}
+
 export async function searchPublicTelegram(query: string): Promise<SearchResponse> {
   const input = query.trim();
   const suggestions = generateSearchVariants(input);
-  const empty = { relatedQueries: [], sourceLabel: "وسيط رسائل القنوات العامة" };
+  const publicIndexSource: SourceDescriptor = { id: "public-index", label: "فهرس الرسائل العامة", coverage: "قنوات عامة مفهرسة" };
+  const tdlibSource: SourceDescriptor = { id: "tdlib", label: "بحث TDLib العام", coverage: "معرّفات وأسماء كيانات عامة" };
+  const directorySource: SourceDescriptor = { id: "directory", label: "دليل عام متعدد اللغات", coverage: "وفق بيانات مزود الدليل" };
+  const declaredSources = [publicIndexSource, tdlibSource, directorySource];
+  const isConfigured = (baseUrl: string, apiKey: string) => Boolean(baseUrl && apiKey);
+  const initialStates: SourceStatus[] = [
+    { ...publicIndexSource, state: isConfigured(ENV.telegramPublicSearchBaseUrl, ENV.telegramPublicSearchApiKey) ? "unavailable" : "not_configured" },
+    { ...tdlibSource, state: isConfigured(ENV.telegramTdlibSearchBaseUrl, ENV.telegramTdlibSearchApiKey) ? "unavailable" : "not_configured" },
+    { ...directorySource, state: isConfigured(ENV.telegramDirectoryBaseUrl, ENV.telegramDirectoryApiKey) ? "unavailable" : "not_configured" },
+  ];
+  const empty = { relatedQueries: [], sourceLabel: "لا يوجد مصدر بحث مفعل", sources: initialStates };
   if (isRestrictedInput(input)) return { status: "restricted", message: "لا يدعم الدليل البحث بأرقام الهواتف أو استخدام الأرقام لاستنتاج هوية الأشخاص.", results: [], suggestions: [], ...empty };
   if (!input) return { status: "ok", results: [], suggestions: [], ...empty };
-  if (!ENV.telegramPublicSearchBaseUrl || !ENV.telegramPublicSearchApiKey) return { status: "source_not_configured", results: [], suggestions, ...empty };
+  if (!initialStates.some(source => source.state !== "not_configured")) return { status: "source_not_configured", results: [], suggestions, ...empty };
   const cacheKey = normalizeArabic(input);
   const cached = queryCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.response;
   try {
-    const batches: ProviderRow[] = [];
-    for (const variant of suggestions) {
-      const rows = await callProvider(variant, 20);
-      batches.push(...rows);
-    }
-    const mapped = batches.map(row => mapPublicProviderRow(row, input)).filter((item): item is PublicEntityResult => Boolean(item));
+    const mapped: PublicEntityResult[] = [];
+    const sourceStates: SourceStatus[] = [];
+    const runSource = async (source: SourceDescriptor, baseUrl: string, apiKey: string, path: string) => {
+      if (!isConfigured(baseUrl, apiKey)) { sourceStates.push({ ...source, state: "not_configured" }); return; }
+      try {
+        mapped.push(...await querySource(source, baseUrl, apiKey, path, suggestions, input));
+        sourceStates.push({ ...source, state: "used" });
+      } catch {
+        sourceStates.push({ ...source, state: "unavailable" });
+      }
+    };
+    await runSource(publicIndexSource, ENV.telegramPublicSearchBaseUrl, ENV.telegramPublicSearchApiKey, "/search");
+    await runSource(tdlibSource, ENV.telegramTdlibSearchBaseUrl, ENV.telegramTdlibSearchApiKey, "/v1/public-chats/search");
+    await runSource(directorySource, ENV.telegramDirectoryBaseUrl, ENV.telegramDirectoryApiKey, "/v1/directory/search");
     const results = rankPublicResults(deduplicatePublicResults(mapped), input).slice(0, 20);
     await db.upsertPublicEntities(results.map(result => ({
       sourceId: result.id,
@@ -245,7 +278,8 @@ export async function searchPublicTelegram(query: string): Promise<SearchRespons
       canMessage: result.canMessage,
       sourceUpdatedAt: result.sourceUpdatedAt ? new Date(result.sourceUpdatedAt) : null,
     })));
-    const answer: SearchResponse = { status: "ok", results, suggestions, relatedQueries: buildRelatedQueries(results, input), sourceLabel: "وسيط رسائل القنوات العامة" };
+    const usableSources = sourceStates.filter(source => source.state === "used");
+    const answer: SearchResponse = { status: usableSources.length ? "ok" : "source_unavailable", results, suggestions, relatedQueries: buildRelatedQueries(results, input), sourceLabel: usableSources.map(source => source.label).join(" + ") || "المصادر غير متاحة", sources: sourceStates };
     queryCache.set(cacheKey, { expiresAt: Date.now() + 60_000, response: answer });
     return answer;
   } catch (error) {
@@ -257,7 +291,7 @@ export async function searchPublicTelegram(query: string): Promise<SearchRespons
 
 export async function refreshPublicEntity(username: string) {
   if (!USERNAME_PATTERN.test(username) || !ENV.telegramPublicSearchBaseUrl || !ENV.telegramPublicSearchApiKey) return 0;
-  const rows = await callProvider(username, 5);
+  const rows = await callProvider(ENV.telegramPublicSearchBaseUrl, ENV.telegramPublicSearchApiKey, "/search", username, 5);
   const results = rankPublicResults(deduplicatePublicResults(rows.map(row => mapPublicProviderRow(row, username)).filter((item): item is PublicEntityResult => Boolean(item))), username);
   await db.upsertPublicEntities(results.map(result => ({
     sourceId: result.id,

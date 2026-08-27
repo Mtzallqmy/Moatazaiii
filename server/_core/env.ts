@@ -9,4 +9,8 @@ export const ENV = {
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
   telegramPublicSearchBaseUrl: process.env.TELEGRAM_PUBLIC_SEARCH_BASE_URL?.replace(/\/$/, "") ?? "",
   telegramPublicSearchApiKey: process.env.TELEGRAM_PUBLIC_SEARCH_API_KEY ?? "",
+  telegramTdlibSearchBaseUrl: process.env.TELEGRAM_TDLIB_SEARCH_BASE_URL?.replace(/\/$/, "") ?? "",
+  telegramTdlibSearchApiKey: process.env.TELEGRAM_TDLIB_SEARCH_API_KEY ?? "",
+  telegramDirectoryBaseUrl: process.env.TELEGRAM_DIRECTORY_BASE_URL?.replace(/\/$/, "") ?? "",
+  telegramDirectoryApiKey: process.env.TELEGRAM_DIRECTORY_API_KEY ?? "",
 };

@@ -20,7 +20,7 @@ describe("telegram public search privacy and normalization", () => {
   it("ranks an exact public username match ahead of title-only and description-only matches", () => {
     const source = (title: string, username: string | null, description: string | null): PublicEntityResult => ({
       id: title, kind: "channel", title, username, description, photoUrl: null, publicStats: null,
-      language: null, matchType: "", score: 0, publicUrl: username ? `https://t.me/${username}` : null, evidenceUrl: null,
+      language: null, matchType: "", score: 0, publicUrl: username ? `https://t.me/${username}` : null, evidenceUrl: null, source: { id: "public-index", label: "فهرس الرسائل العامة", coverage: "قنوات عامة مفهرسة" },
       canMessage: false, sourceUpdatedAt: null,
     });
     const ranked = rankPublicResults([

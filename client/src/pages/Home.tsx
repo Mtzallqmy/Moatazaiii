@@ -35,6 +35,7 @@ type Result = {
   evidenceUrl: string | null;
   canMessage: boolean;
   sourceUpdatedAt: string | null;
+  source: { id: "public-index" | "tdlib" | "directory"; label: string; coverage: string };
 };
 
 const kindLabel = { channel: "قناة", group: "مجموعة", user: "حساب عام" } as const;
@@ -65,6 +66,7 @@ function ResultCard({ result }: { result: Result }) {
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 p-4 sm:px-6">
         <p className="text-xs text-[#708187]">الترتيب: صلة مباشرة وإشارات عامة متاحة</p>
+        <span className="rounded-full bg-[#eef7f5] px-2.5 py-1 text-[11px] font-semibold text-[#23706b]">{result.source.label}</span>
         <div className="flex items-center gap-2">
           {result.canMessage && result.username && (
             <a className="inline-flex items-center gap-1.5 rounded-xl border border-[#c9d7d5] px-3.5 py-2 text-sm font-semibold text-[#245d61] transition hover:bg-[#eef7f5]" href={`https://t.me/${result.username}`} target="_blank" rel="noreferrer">
@@ -87,6 +89,7 @@ export default function Home() {
   const suggestions = useMemo(() => response?.suggestions ?? [], [response?.suggestions]);
   const relatedQueries = useMemo(() => response?.relatedQueries ?? [], [response?.relatedQueries]);
   const results = (response?.results ?? []) as Result[];
+  const sources = response?.sources ?? [];
 
   function submitSearch(event: FormEvent) {
     event.preventDefault();
@@ -157,6 +160,7 @@ export default function Home() {
               {response?.sourceLabel && <span className="rounded-full border border-[#d9e2df] bg-white px-3 py-1.5 text-xs text-[#587175]">المصدر: {response.sourceLabel}</span>}
             </div>
             {suggestions.length > 1 && <div className="mb-5 flex flex-wrap items-center gap-2 rounded-2xl border border-[#dbe3df] bg-[#f5faf8] p-3 text-xs text-[#557175]"><Sparkles className="h-4 w-4 text-[#2c938d]" /><span>صياغات مقترحة:</span>{suggestions.slice(1).map((suggestion: string) => <button type="button" key={suggestion} onClick={() => useSuggestion(suggestion)} className="rounded-lg bg-white px-2.5 py-1.5 font-semibold text-[#1e6e78] shadow-sm ring-1 ring-[#dcebe7] hover:bg-[#eff9f5]">{suggestion}</button>)}</div>}
+            {sources.length > 0 && <div className="mb-5 flex flex-wrap items-center gap-2 text-[11px] text-[#5c7075]">{sources.map((source: { id: string; label: string; coverage: string; state: string }) => <span key={source.id} title={source.coverage} className={`rounded-full border px-2.5 py-1.5 ${source.state === "used" ? "border-[#b9d9d2] bg-[#edf8f5] text-[#21655e]" : "border-[#ded8cc] bg-[#f8f6f0] text-[#7b7870]"}`}>{source.label}: {source.state === "used" ? "متصل" : source.state === "not_configured" ? "قيد التفعيل" : "غير متاح"}</span>)}</div>}
             {relatedQueries.length > 0 && <div className="mb-5 flex flex-wrap items-center gap-2 rounded-2xl border border-[#dce3ea] bg-[#f4f8fb] p-3 text-xs text-[#557175]"><Globe2 className="h-4 w-4 text-[#2c778d]" /><span>اكتشف قنوات قريبة من المصدر:</span>{relatedQueries.map((suggestion: string) => <button type="button" key={suggestion} onClick={() => useSuggestion(suggestion)} className="rounded-lg bg-white px-2.5 py-1.5 font-semibold text-[#1e6e78] shadow-sm ring-1 ring-[#dcebe7] hover:bg-[#edf7fb]">{suggestion}</button>)}</div>}
             {searchQuery.isFetching && <div className="grid min-h-48 place-items-center rounded-[1.5rem] border border-dashed border-[#b8cbc7] bg-white/65"><div className="flex items-center gap-3 text-sm font-medium text-[#527176]"><Loader2 className="h-5 w-5 animate-spin text-[#257a87]" /> البحث في المصدر العام المصرح به…</div></div>}
             {!searchQuery.isFetching && response?.status === "source_not_configured" && <EmptyState icon={<CircleAlert className="h-6 w-6" />} title="مصدر البيانات الحقيقي غير معتمد بعد" text="تم تجهيز طبقة البحث، لكنها لن تعرض نتائج تجريبية. أضف وسيط بيانات مرخصًا ومفاتيحه على الخادم لبدء عرض الملفات العامة الفعلية." linkText="راجع متطلبات المعمارية" />}
