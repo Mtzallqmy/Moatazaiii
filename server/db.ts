@@ -124,6 +124,17 @@ export async function getRefreshSettingByTaskUid(taskUid: string) {
   return (await db.select().from(publicIndexRefreshSettings).where(eq(publicIndexRefreshSettings.scheduleCronTaskUid, taskUid)).limit(1))[0];
 }
 
+export async function getOrCreateExternalRefreshSetting(maxPerRun: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database connection is required for scheduled refresh");
+  const existing = (await db.select().from(publicIndexRefreshSettings).limit(1))[0];
+  if (existing) return existing;
+  await db.insert(publicIndexRefreshSettings).values({ enabled: true, maxPerRun });
+  const created = (await db.select().from(publicIndexRefreshSettings).limit(1))[0];
+  if (!created) throw new Error("Unable to create scheduled refresh settings");
+  return created;
+}
+
 export async function updateRefreshCursor(id: number, lastCursor: number) {
   const db = await getDb();
   if (!db) return;

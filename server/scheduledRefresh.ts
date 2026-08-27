@@ -19,3 +19,10 @@ export async function refreshPublicIndex(setting: { id: number; maxPerRun: numbe
   await db.updateRefreshCursor(setting.id, cursor);
   return { ok: true, refreshed, processed: items.length, nextCursor: cursor };
 }
+
+/** نقطة دخول للخدمات الخارجية المجدولة؛ تنشئ إعدادًا واحدًا فقط عند التشغيل الأول. */
+export async function refreshPublicIndexForExternalScheduler(limit: number) {
+  const setting = await db.getOrCreateExternalRefreshSetting(Math.min(Math.max(limit, 1), 25));
+  if (!setting.enabled) return { ok: true, skipped: "disabled" as const };
+  return refreshPublicIndex(setting);
+}
