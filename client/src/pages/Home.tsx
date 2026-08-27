@@ -32,6 +32,7 @@ type Result = {
   matchType: string;
   score: number;
   publicUrl: string | null;
+  evidenceUrl: string | null;
   canMessage: boolean;
   sourceUpdatedAt: string | null;
 };
@@ -70,11 +71,8 @@ function ResultCard({ result }: { result: Result }) {
               <MessageCircle className="h-4 w-4" /> مراسلة
             </a>
           )}
-          {canOpen && (
-            <a className="inline-flex items-center gap-1.5 rounded-xl bg-deep px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#0d3c4f]" href={result.publicUrl!} target="_blank" rel="noreferrer">
-              <Send className="h-4 w-4" /> فتح في تيليجرام
-            </a>
-          )}
+          {result.evidenceUrl && result.evidenceUrl !== result.publicUrl && <a className="inline-flex items-center gap-1.5 rounded-xl border border-[#c9d7d5] px-3.5 py-2 text-sm font-semibold text-[#245d61] transition hover:bg-[#eef7f5]" href={result.evidenceUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" /> الإشارة العامة</a>}
+          {canOpen && <a className="inline-flex items-center gap-1.5 rounded-xl bg-deep px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#0d3c4f]" href={result.publicUrl!} target="_blank" rel="noreferrer"><Send className="h-4 w-4" /> فتح في تيليجرام</a>}
         </div>
       </div>
     </article>
@@ -87,6 +85,7 @@ export default function Home() {
   const searchQuery = trpc.search.public.useQuery({ query: submitted }, { enabled: submitted.length > 0, retry: false });
   const response = searchQuery.data;
   const suggestions = useMemo(() => response?.suggestions ?? [], [response?.suggestions]);
+  const relatedQueries = useMemo(() => response?.relatedQueries ?? [], [response?.relatedQueries]);
   const results = (response?.results ?? []) as Result[];
 
   function submitSearch(event: FormEvent) {
@@ -146,7 +145,7 @@ export default function Home() {
             </div>
           </form>
 
-          <p className="mx-auto mt-3 max-w-3xl text-center text-[11px] leading-6 text-[#6d7c7d]">نطاق النتائج الحية الحالي: إشارات ورسائل القنوات العامة التي يتيحها المصدر؛ لا يدّعي الموقع فهرسة جميع حسابات أو مجموعات تيليجرام.</p>
+          <p className="mx-auto mt-3 max-w-3xl text-center text-[11px] leading-6 text-[#6d7c7d]">يبحث المحرك في الإشارات العامة التي يعيدها المصدر بلغتها الأصلية ويقترح قنوات قريبة منها؛ لا يدّعي فهرسة جميع حسابات أو مجموعات تيليجرام أو جميع البلدان.</p>
 
           {!submitted && <div className="mx-auto mt-4 flex max-w-3xl flex-wrap items-center justify-center gap-2 text-xs text-[#63777a]"><span>جرّب:</span><button type="button" onClick={() => useSuggestion("@telegram")} className="rounded-lg bg-white px-2.5 py-1.5 font-medium shadow-sm ring-1 ring-[#e5e1d7] transition hover:text-[#126778]" dir="ltr">@telegram</button><button type="button" onClick={() => useSuggestion("تطوير") } className="rounded-lg bg-white px-2.5 py-1.5 font-medium shadow-sm ring-1 ring-[#e5e1d7] transition hover:text-[#126778]">تطوير</button><button type="button" onClick={() => useSuggestion("https://t.me/telegram")} className="rounded-lg bg-white px-2.5 py-1.5 font-medium shadow-sm ring-1 ring-[#e5e1d7] transition hover:text-[#126778]" dir="ltr">t.me/telegram</button></div>}
         </section>
@@ -158,6 +157,7 @@ export default function Home() {
               {response?.sourceLabel && <span className="rounded-full border border-[#d9e2df] bg-white px-3 py-1.5 text-xs text-[#587175]">المصدر: {response.sourceLabel}</span>}
             </div>
             {suggestions.length > 1 && <div className="mb-5 flex flex-wrap items-center gap-2 rounded-2xl border border-[#dbe3df] bg-[#f5faf8] p-3 text-xs text-[#557175]"><Sparkles className="h-4 w-4 text-[#2c938d]" /><span>صياغات مقترحة:</span>{suggestions.slice(1).map((suggestion: string) => <button type="button" key={suggestion} onClick={() => useSuggestion(suggestion)} className="rounded-lg bg-white px-2.5 py-1.5 font-semibold text-[#1e6e78] shadow-sm ring-1 ring-[#dcebe7] hover:bg-[#eff9f5]">{suggestion}</button>)}</div>}
+            {relatedQueries.length > 0 && <div className="mb-5 flex flex-wrap items-center gap-2 rounded-2xl border border-[#dce3ea] bg-[#f4f8fb] p-3 text-xs text-[#557175]"><Globe2 className="h-4 w-4 text-[#2c778d]" /><span>اكتشف قنوات قريبة من المصدر:</span>{relatedQueries.map((suggestion: string) => <button type="button" key={suggestion} onClick={() => useSuggestion(suggestion)} className="rounded-lg bg-white px-2.5 py-1.5 font-semibold text-[#1e6e78] shadow-sm ring-1 ring-[#dcebe7] hover:bg-[#edf7fb]">{suggestion}</button>)}</div>}
             {searchQuery.isFetching && <div className="grid min-h-48 place-items-center rounded-[1.5rem] border border-dashed border-[#b8cbc7] bg-white/65"><div className="flex items-center gap-3 text-sm font-medium text-[#527176]"><Loader2 className="h-5 w-5 animate-spin text-[#257a87]" /> البحث في المصدر العام المصرح به…</div></div>}
             {!searchQuery.isFetching && response?.status === "source_not_configured" && <EmptyState icon={<CircleAlert className="h-6 w-6" />} title="مصدر البيانات الحقيقي غير معتمد بعد" text="تم تجهيز طبقة البحث، لكنها لن تعرض نتائج تجريبية. أضف وسيط بيانات مرخصًا ومفاتيحه على الخادم لبدء عرض الملفات العامة الفعلية." linkText="راجع متطلبات المعمارية" />}
             {!searchQuery.isFetching && response?.status === "restricted" && <EmptyState icon={<Ban className="h-6 w-6" />} title="لا يمكن تنفيذ هذا النوع من البحث" text={response.message ?? "البحث بالأرقام أو محاولة التعرف على الأشخاص غير مدعومين حفاظًا على الخصوصية."} />}

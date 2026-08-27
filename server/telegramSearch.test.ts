@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generateSearchVariants, normalizeArabic, rankPublicResults, searchPublicTelegram, type PublicEntityResult } from "./telegramSearch";
+import { deduplicatePublicResults, generateSearchVariants, mapPublicProviderRow, normalizeArabic, rankPublicResults, searchPublicTelegram, type PublicEntityResult } from "./telegramSearch";
 
 describe("telegram public search privacy and normalization", () => {
   it("normalizes common Arabic variants without creating an identity inference", () => {
@@ -20,7 +20,7 @@ describe("telegram public search privacy and normalization", () => {
   it("ranks an exact public username match ahead of title-only and description-only matches", () => {
     const source = (title: string, username: string | null, description: string | null): PublicEntityResult => ({
       id: title, kind: "channel", title, username, description, photoUrl: null, publicStats: null,
-      language: null, matchType: "", score: 0, publicUrl: username ? `https://t.me/${username}` : null,
+      language: null, matchType: "", score: 0, publicUrl: username ? `https://t.me/${username}` : null, evidenceUrl: null,
       canMessage: false, sourceUpdatedAt: null,
     });
     const ranked = rankPublicResults([
@@ -31,5 +31,24 @@ describe("telegram public search privacy and normalization", () => {
 
     expect(ranked.map(item => item.username ?? item.title)).toEqual(["alpha", "Alpha Network", "مجتمع عام"]);
     expect(ranked[0]?.matchType).toBe("مطابقة المعرّف الدقيقة");
+  });
+
+  it("maps the live message-shaped provider row to a public chat card without exposing the message body", () => {
+    const result = mapPublicProviderRow({
+      id: 21792,
+      text: "The new song is available today",
+      date: "2026-08-19T13:56:34+00:00",
+      chat: { title: "Minecraft Discussion", username: "MinecraftDiscussion" },
+      url: "https://t.me/MinecraftDiscussion/21792",
+    }, "song");
+
+    expect(result).toMatchObject({ title: "Minecraft Discussion", username: "MinecraftDiscussion", publicUrl: "https://t.me/MinecraftDiscussion", evidenceUrl: "https://t.me/MinecraftDiscussion/21792", matchType: "مطابقة ضمن إشارة عامة" });
+    expect(result?.description).not.toContain("new song");
+  });
+
+  it("deduplicates multiple message matches from the same public channel", () => {
+    const first = mapPublicProviderRow({ id: 1, text: "song", chat: { title: "Public Music", username: "publicmusic" }, url: "https://t.me/publicmusic/1" }, "song")!;
+    const second = mapPublicProviderRow({ id: 2, text: "another song", chat: { title: "Public Music", username: "publicmusic" }, url: "https://t.me/publicmusic/2" }, "song")!;
+    expect(deduplicatePublicResults([first, second])).toHaveLength(1);
   });
 });
